@@ -33,6 +33,7 @@ export default function ImportWizard() {
   const [salesImportMode, setSalesImportMode] = useState('append');
   
   // New: Chunk streaming metrics for user feedback
+  const [inventoryUploading, setInventoryUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const baseMandatory = ['Transaction_ID', 'Timestamp', 'ProductID', 'Qty_Sold', 'Category', 'Sub_Category'];
@@ -139,16 +140,39 @@ export default function ImportWizard() {
     setStep(4);
   };
 
-  const submitInventory = async () => {
+const submitInventory = async () => {
+    setInventoryUploading(true);
+    setUploadProgress(0); // We can safely reuse the progress state from the sales tab
+
     try {
-      const res = await axios.post(`${BACKEND_URL}/api/import_inventory`, {
-        data: workingDf,
-        mode: importMode
-      });
-      toast.success(res.data.message);
+      const chunkSize = 400; // Safe batch limit
+      const totalRecords = workingDf.length;
+      let targetExecutionMode = importMode; 
+
+      for (let i = 0; i < totalRecords; i += chunkSize) {
+        const chunk = workingDf.slice(i, i + chunkSize);
+        
+        setUploadProgress(Math.round((i / totalRecords) * 100));
+
+        await axios.post(`${BACKEND_URL}/api/import_inventory`, {
+          data: chunk,
+          mode: targetExecutionMode
+        });
+
+        // Switch to 'update' after the first chunk wipes the slate
+        if (targetExecutionMode === 'replace') {
+          targetExecutionMode = 'update';
+        }
+      }
+
+      setUploadProgress(100);
+      toast.success("Inventory Synchronized", { description: `Processed ${totalRecords} items successfully.` });
       setStep(1);
     } catch (err) {
       toast.error("Integration Error", { description: err.response?.data?.detail || err.message });
+    } finally {
+      setInventoryUploading(false);
+      setTimeout(() => setUploadProgress(0), 4000);
     }
   };
 
