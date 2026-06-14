@@ -145,7 +145,7 @@ const submitInventory = async () => {
     setUploadProgress(0); // We can safely reuse the progress state from the sales tab
 
     try {
-      const chunkSize = 1000; // Safe batch limit
+      const chunkSize = 800; // Safe batch limit
       const totalRecords = workingDf.length;
       let targetExecutionMode = importMode; 
 
@@ -163,6 +163,8 @@ const submitInventory = async () => {
         if (targetExecutionMode === 'replace') {
           targetExecutionMode = 'update';
         }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       setUploadProgress(100);
@@ -268,7 +270,7 @@ const submitInventory = async () => {
       }).filter(r => r.Timestamp);
 
       // --- NEW: CHUNKED BATCH STREAMING LAYER FOR CLOUD ROUTING ---
-      const chunkSize = 5000; // Optimal safe block width for free containers
+      const chunkSize = 4000; // Optimal safe block width for free containers
       const totalRecords = processedData.length;
       let targetExecutionMode = salesImportMode; 
       let lastServerMessage = "Ingestion Complete";
@@ -291,6 +293,8 @@ const submitInventory = async () => {
         if (targetExecutionMode === 'replace') {
           targetExecutionMode = 'append';
         }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       setUploadProgress(100);
@@ -410,26 +414,52 @@ const submitInventory = async () => {
               <h3 className="text-xl font-bold text-white mb-2">Step 4: Integration Strategy</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div
-                  onClick={() => setImportMode('update')}
-                  className={`cursor-pointer border-2 rounded-xl p-6 transition-all ${importMode === 'update' ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-900 border-gray-700 hover:border-gray-500'}`}
+                  onClick={() => !inventoryUploading && setImportMode('update')}
+                  className={`cursor-pointer border-2 rounded-xl p-6 transition-all ${importMode === 'update' ? 'bg-blue-900/30 border-blue-500' : 'bg-gray-900 border-gray-700 hover:border-gray-500'} ${inventoryUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <h4 className="font-bold text-lg text-white mb-2 flex items-center gap-2"><RefreshCcw size={18} /> Smart Update</h4>
                   <p className="text-sm text-gray-400">Matches existing items by ProductID to update them. Adds new items to the bottom. Does NOT delete old data.</p>
                 </div>
 
                 <div
-                  onClick={() => setImportMode('replace')}
-                  className={`cursor-pointer border-2 rounded-xl p-6 transition-all ${importMode === 'replace' ? 'bg-red-900/30 border-red-500' : 'bg-gray-900 border-gray-700 hover:border-gray-500'}`}
+                  onClick={() => !inventoryUploading && setImportMode('replace')}
+                  className={`cursor-pointer border-2 rounded-xl p-6 transition-all ${importMode === 'replace' ? 'bg-red-900/30 border-red-500' : 'bg-gray-900 border-gray-700 hover:border-gray-500'} ${inventoryUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <h4 className="font-bold text-lg text-red-400 mb-2 flex items-center gap-2"><AlertTriangle size={18} /> Clean Slate</h4>
                   <p className="text-sm text-gray-400">Deletes all existing inventory and completely replaces it with this new file. Use with caution.</p>
                 </div>
               </div>
 
+              {/* NEW: Inventory Progress Bar Display */}
+              {inventoryUploading && (
+                <div className="w-full bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-2 mt-4 animate-in fade-in">
+                  <div className="flex justify-between text-xs font-bold text-gray-400">
+                    <span>Structuring Database Architecture...</span>
+                    <span className="text-blue-400 font-black">{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden border border-gray-700/50">
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2.5 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-4 pt-4 mt-8 border-t border-gray-700">
-                <button onClick={() => setStep(3)} className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-white">Back</button>
-                <button onClick={submitInventory} className={`px-8 py-3 rounded-lg font-bold text-white flex-1 ${importMode === 'update' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-red-600 hover:bg-red-500'}`}>
-                  Execute {importMode === 'update' ? 'Merge' : 'Wipe & Replace'}
+                <button 
+                  onClick={() => setStep(3)} 
+                  disabled={inventoryUploading}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg font-medium text-white"
+                >
+                  Back
+                </button>
+                <button 
+                  onClick={submitInventory} 
+                  disabled={inventoryUploading}
+                  className={`px-8 py-3 disabled:opacity-50 rounded-lg font-bold text-white flex-1 transition-all flex items-center justify-center gap-2 ${importMode === 'update' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-red-600 hover:bg-red-500'}`}
+                >
+                  {inventoryUploading ? <RefreshCcw className="animate-spin" /> : `Execute ${importMode === 'update' ? 'Merge' : 'Wipe & Replace'}`}
                 </button>
               </div>
             </div>
