@@ -31,6 +31,9 @@ export default function ImportWizard() {
   const [salesMapping, setSalesMapping] = useState({});
   const [salesUploading, setSalesUploading] = useState(false);
   const [salesImportMode, setSalesImportMode] = useState('append');
+  
+  // New: Chunk streaming metrics for user feedback
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const baseMandatory = ['Transaction_ID', 'Timestamp', 'ProductID', 'Qty_Sold', 'Category', 'Sub_Category'];
   const financialCols = ['Sale_Price', 'Cost_Price', 'Profit'];
@@ -116,8 +119,6 @@ export default function ImportWizard() {
     const fixedDf = workingDf.map(row => {
       const newRow = { ...row };
 
-
-
       if (mapping['Capacity'] === 'auto' || !newRow['Capacity']) {
         newRow['Capacity'] = defaultCapacity;
       }
@@ -140,7 +141,6 @@ export default function ImportWizard() {
 
   const submitInventory = async () => {
     try {
-      // FIX 1: Restored the correct Inventory POST route
       const res = await axios.post(`${BACKEND_URL}/api/import_inventory`, {
         data: workingDf,
         mode: importMode
@@ -169,12 +169,10 @@ export default function ImportWizard() {
         setSalesData(df);
         setSalesCols(fileCols);
 
-        // --- NEW: Smart Auto-Mapping Logic ---
         const autoMap = {};
         const allTargetCols = [...baseMandatory, ...financialCols];
 
         allTargetCols.forEach(targetCol => {
-          // Look for an exact match, or a case-insensitive fuzzy match
           const match = fileCols.find(c =>
             c.toLowerCase().replace(/_/g, '') === targetCol.toLowerCase().replace(/_/g, '')
           );
@@ -200,6 +198,7 @@ export default function ImportWizard() {
     }
 
     setSalesUploading(true);
+    setUploadProgress(0);
 
     try {
       const processedData = salesData.map(row => {
@@ -244,19 +243,42 @@ export default function ImportWizard() {
         return newRow;
       }).filter(r => r.Timestamp);
 
-      // FIX 2: Correctly pass the dynamic salesImportMode state
-      const res = await axios.post(`${BACKEND_URL}/api/import_sales`, {
-        data: processedData,
-        mode: salesImportMode
-      });
+      // --- NEW: CHUNKED BATCH STREAMING LAYER FOR CLOUD ROUTING ---
+      const chunkSize = 400; // Optimal safe block width for free containers
+      const totalRecords = processedData.length;
+      let targetExecutionMode = salesImportMode; 
+      let lastServerMessage = "Ingestion Complete";
 
-      toast.success(res.data.message);
+      for (let i = 0; i < totalRecords; i += chunkSize) {
+        const chunk = processedData.slice(i, i + chunkSize);
+        
+        // Compute live progress percentage
+        setUploadProgress(Math.round((i / totalRecords) * 100));
+
+        const res = await axios.post(`${BACKEND_URL}/api/import_sales`, {
+          data: chunk,
+          mode: targetExecutionMode
+        });
+
+        lastServerMessage = res.data.message;
+
+        // Failsafe state mutation: Once the first chunk clears the tables via 'replace',
+        // subsequent blocks must switch to 'append' so they stack up smoothly.
+        if (targetExecutionMode === 'replace') {
+          targetExecutionMode = 'append';
+        }
+      }
+
+      setUploadProgress(100);
+      toast.success("Synchronized Successfully", { description: `Processed ${totalRecords} historical log records.` });
+      
       setSalesData([]);
       setSalesCols([]);
     } catch (err) {
       toast.error("Upload Failed", { description: err.response?.data?.detail || err.message });
     } finally {
       setSalesUploading(false);
+      setTimeout(() => setUploadProgress(0), 4000); // Clear progress indicator
     }
   };
 
@@ -275,7 +297,7 @@ export default function ImportWizard() {
           <Upload size={20} /> Import Main Inventory
         </button>
         <button
-          onClick={() => setMode('sales')}
+          onClick={() => { setMode('sales'); setUploadProgress(0); }}
           className={`flex-1 py-3 px-4 rounded-lg font-bold flex justify-center items-center gap-2 border ${mode === 'sales' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}
         >
           <FileSpreadsheet size={20} /> Import Historical Sales
@@ -391,7 +413,6 @@ export default function ImportWizard() {
         </div>
       )}
 
-      {/* SALES BLOCK... */}
       {mode === 'sales' && (
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 animate-in fade-in">
           <div className="bg-indigo-900/20 border border-indigo-800 p-4 rounded-lg text-sm text-indigo-200 mb-6">
@@ -449,7 +470,6 @@ export default function ImportWizard() {
                 </div>
               </div>
 
-              {/* FIX 3: ADDED THE MISSING TOGGLE UI FOR SALES */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                 <div
                   onClick={() => setSalesImportMode('append')}
@@ -467,6 +487,22 @@ export default function ImportWizard() {
                   <p className="text-xs text-gray-400">Deletes all historical sales data and completely replaces it with this file.</p>
                 </div>
               </div>
+
+              {/* Progress Bar Display */}
+              {salesUploading && (
+                <div className="w-full bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-2 animate-in fade-in">
+                  <div className="flex justify-between text-xs font-bold text-gray-400">
+                    <span>Streaming Data Fragments to Cloud Instance...</span>
+                    <span className="text-indigo-400 font-black">{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden border border-gray-700/50">
+                    <div 
+                      className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2.5 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${uploadProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-4 pt-4 border-t border-gray-700">
                 <button onClick={() => setSalesData([])} className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium text-white">Reset File</button>
