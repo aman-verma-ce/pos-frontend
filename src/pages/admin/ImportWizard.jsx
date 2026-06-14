@@ -145,7 +145,7 @@ const submitInventory = async () => {
     setUploadProgress(0); // We can safely reuse the progress state from the sales tab
 
     try {
-      const chunkSize = 5000; // Safe batch limit
+      const chunkSize = 1000; // Safe batch limit
       const totalRecords = workingDf.length;
       let targetExecutionMode = importMode; 
 
