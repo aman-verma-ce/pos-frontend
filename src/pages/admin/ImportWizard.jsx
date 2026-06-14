@@ -244,7 +244,7 @@ export default function ImportWizard() {
       }).filter(r => r.Timestamp);
 
       // --- NEW: CHUNKED BATCH STREAMING LAYER FOR CLOUD ROUTING ---
-      const chunkSize = 400; // Optimal safe block width for free containers
+      const chunkSize = 5000; // Optimal safe block width for free containers
       const totalRecords = processedData.length;
       let targetExecutionMode = salesImportMode; 
       let lastServerMessage = "Ingestion Complete";
